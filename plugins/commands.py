@@ -7,6 +7,7 @@ import asyncio
 import string
 import sys
 import pytz
+from typing import Optional, List, Dict, Any, Union, Tuple
 from .pmfilter import auto_filter 
 from Script import script
 from datetime import datetime, timedelta

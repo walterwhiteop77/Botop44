@@ -2,6 +2,7 @@ import asyncio
 import datetime
 import logging
 import time
+from typing import Optional, List, Dict, Any, Tuple, Union
 from pyrogram import Client, filters, enums
 from pyrogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
