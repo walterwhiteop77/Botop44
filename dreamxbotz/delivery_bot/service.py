@@ -1,3 +1,4 @@
+from __future__ import annotations
 import logging
 from typing import Optional, Tuple, Dict, Any
 from database.delivery_db import delivery_db
@@ -28,6 +29,11 @@ async def create_file_delivery_link(
         config = await delivery_db.get_config()
         bot_username = config.get("bot_username", "")
 
+    if not bot_username or not isinstance(bot_username, str) or not bot_username.strip():
+        raise ValueError("Delivery bot username is not active or configured")
+
+    clean_bot_username = bot_username.strip().lstrip("@")
+
     token, request_id = await delivery_db.create_request(
         user_id=user_id,
         file_id=file_id,
@@ -41,8 +47,8 @@ async def create_file_delivery_link(
         channel_id=channel_id,
         message_id=message_id,
         extra_data=extra_data,
-        delivery_bot=bot_username
+        delivery_bot=clean_bot_username
     )
 
-    deep_link = f"https://t.me/{bot_username}?start={token}"
+    deep_link = f"https://t.me/{clean_bot_username}?start={token}"
     return token, deep_link

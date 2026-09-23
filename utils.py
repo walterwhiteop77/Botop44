@@ -514,19 +514,46 @@ async def search_gagala(text):
     return [title.get_text() for title in titles if title.get_text().strip()]
 
 async def get_shortlink(link, grp_id, is_second_shortener=False, is_third_shortener=False):
-    settings = await get_settings(grp_id)
-    if is_third_shortener:             
-        api, site = settings['api_three'], settings['shortner_three']
-    else:
-        if is_second_shortener:
-            api, site = settings['api_two'], settings['shortner_two']
-        else:
-            api, site = settings['api'], settings['shortner']
-    shortzy = Shortzy(api, site)
     try:
-        link = await shortzy.convert(link)
-    except Exception:
-        link = await shortzy.get_quick_link(link)
+        settings = await get_settings(grp_id)
+        if not settings:
+            return link
+        if is_third_shortener:             
+            api = settings.get('api_three')
+            site = settings.get('shortner_three')
+        elif is_second_shortener:
+            api = settings.get('api_two')
+            site = settings.get('shortner_two')
+        else:
+            api = settings.get('api')
+            site = settings.get('shortner')
+
+        if not api or not site:
+            return link
+
+        # Clean site: strip protocol and trailing slashes to avoid https://https:// malformed URLs
+        clean_site = str(site).strip().replace("https://", "").replace("http://", "").rstrip("/")
+        clean_api = str(api).strip()
+
+        if not clean_site or not clean_api:
+            return link
+
+        shortzy = Shortzy(clean_api, clean_site)
+        try:
+            converted = await shortzy.convert(link)
+            if converted and isinstance(converted, str) and (converted.startswith("http://") or converted.startswith("https://")):
+                return converted
+        except Exception:
+            pass
+
+        try:
+            quick = await shortzy.get_quick_link(link)
+            if quick and isinstance(quick, str) and (quick.startswith("http://") or quick.startswith("https://")):
+                return quick
+        except Exception:
+            pass
+    except Exception as e:
+        logger.warning(f"Error in get_shortlink: {e}")
     return link
 
 async def get_settings(group_id):

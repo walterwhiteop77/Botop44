@@ -328,27 +328,50 @@ async def start(client, message):
                     verify_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=7))
                     await db.create_verify_id(user_id, verify_id)
                     temp.VERIFICATIONS[user_id] = grp_id
+                    bot_username = temp.U_NAME
+                    if not bot_username:
+                        bot_username = getattr(getattr(message, "_client", None), "me", None)
+                        bot_username = getattr(bot_username, "username", None) or "AutoFilterBot"
+
                     if message.command[1].startswith('allfiles'):
-                        verify = await get_shortlink(f"https://telegram.me/{temp.U_NAME}?start=sendall_{user_id}_{verify_id}_{file_id}", grp_id, is_second_shortener, is_third_shortener)
+                        raw_verify = f"https://telegram.me/{bot_username}?start=sendall_{user_id}_{verify_id}_{file_id}"
                     else:
-                        verify = await get_shortlink(f"https://telegram.me/{temp.U_NAME}?start=notcopy_{user_id}_{verify_id}_{file_id}", grp_id, is_second_shortener, is_third_shortener)
+                        raw_verify = f"https://telegram.me/{bot_username}?start=notcopy_{user_id}_{verify_id}_{file_id}"
+
+                    verify = await get_shortlink(raw_verify, grp_id, is_second_shortener, is_third_shortener)
+                    if not verify or not isinstance(verify, str) or not (verify.startswith("http://") or verify.startswith("https://")):
+                        verify = raw_verify
+
                     if is_third_shortener:
-                        howtodownload = settings.get('tutorial_3', TUTORIAL_3)
+                        howtodownload = settings.get('tutorial_3') or TUTORIAL_3
                     else:
-                        howtodownload = settings.get('tutorial_2', TUTORIAL_2) if is_second_shortener else settings.get('tutorial', TUTORIAL)
+                        howtodownload = (settings.get('tutorial_2') or TUTORIAL_2) if is_second_shortener else (settings.get('tutorial') or TUTORIAL)
+
+                    # Sanitize tutorial link
+                    if not howtodownload or not isinstance(howtodownload, str):
+                        howtodownload = TUTORIAL or "https://t.me/dreamxbotz"
+                    howtodownload = howtodownload.strip()
+                    if howtodownload.startswith("@"):
+                        howtodownload = f"https://t.me/{howtodownload[1:]}"
+                    elif not (howtodownload.startswith("http://") or howtodownload.startswith("https://")):
+                        howtodownload = f"https://t.me/{howtodownload}"
+
                     buttons = [[
                         InlineKeyboardButton(text="♻️ ᴄʟɪᴄᴋ ʜᴇʀᴇ ᴛᴏ ᴠᴇʀɪꜰʏ ♻️", url=verify)
-                    ],[
-                        InlineKeyboardButton(text="⁉️ ʜᴏᴡ ᴛᴏ ᴠᴇʀɪꜰʏ ⁉️", url=howtodownload)
                     ]]
-                    reply_markup=InlineKeyboardMarkup(buttons)
+                    if howtodownload and (howtodownload.startswith("http://") or howtodownload.startswith("https://")):
+                        buttons.append([
+                            InlineKeyboardButton(text="⁉️ ʜᴏᴡ ᴛᴏ ᴠᴇʀɪꜰʏ ⁉️", url=howtodownload)
+                        ])
+
+                    reply_markup = InlineKeyboardMarkup(buttons)
                     if await db.user_verified(user_id): 
                         msg = script.THIRDT_VERIFICATION_TEXT
                     else:            
                         msg = script.SECOND_VERIFICATION_TEXT if is_second_shortener else script.VERIFICATION_TEXT
-                    n=await m.reply_text(
+                    n = await m.reply_text(
                         text=msg.format(message.from_user.mention),
-                        protect_content = True,
+                        protect_content=True,
                         reply_markup=reply_markup,
                         parse_mode=enums.ParseMode.HTML
                     )
