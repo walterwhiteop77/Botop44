@@ -1,0 +1,6 @@
+{
+  "name": "Auto Filter Bot - Dual Bot Delivery System",
+  "description": "Telegram Auto Filter Bot with Dual-Bot Architecture for secure file delivery and advanced bot management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

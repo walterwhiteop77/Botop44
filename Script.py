@@ -495,7 +495,7 @@ This Is An Open-Source Project. You Can Use It Freely, But Selling The Source Co
 • /get_premium - <code>ɢᴇᴛ ɪɴꜰᴏ ᴏꜰ ᴀɴʏ ᴘʀᴇᴍɪᴜᴍ ᴜꜱᴇʀ.</code>
 • /restart - <code>ʀᴇꜱᴛᴀʀᴛ ᴛʜᴇ ʙᴏᴛ.</code>
 • /maintenance - <code>ᴛᴜʀɴ ᴏɴ / ᴏꜰꜰ ᴍᴀɪɴᴛᴇɴᴀɴᴄᴇ.</code>
-• /bot2 - <code>ꜰɪʟᴇ ᴅᴇʟɪᴠᴇʀʏ ʙᴏᴛ ᴄᴏɴᴛʀᴏʟ ᴘᴀɴᴇʟ.</code>"""
+• /filebot - <code>ᴍᴀɴᴀɢᴇ ꜰɪʟᴇ ᴅᴇʟɪᴠᴇʀʏ ʙᴏᴛ (ʙᴏᴛ 2).</code>"""
 
     GROUP_CMD = """ʜᴇʏ 👋,
 📚 ʜᴇʀᴇ ᴀʀᴇ ᴍʏ ᴄᴏᴍᴍᴀɴᴅꜱ ʟɪꜱᴛ ꜰᴏʀ ᴄᴜꜱᴛᴏᴍɪᴢᴇᴅ ɢʀᴏᴜᴘꜱ ⇊

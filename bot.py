@@ -19,6 +19,8 @@ from plugins import web_server, check_expired_premium, keep_alive
 from dreamxbotz.Bot import dreamxbotz
 from dreamxbotz.util.keepalive import ping_server
 from dreamxbotz.Bot.clients import initialize_clients
+from database.delivery_db import delivery_db
+from dreamxbotz.delivery_bot import delivery_bot_manager
 from PIL import Image
 
 Image.MAX_IMAGE_PIXELS = 500_000_000
@@ -66,6 +68,11 @@ async def dreamxbotz_start():
     temp.BANNED_USERS = b_users
     temp.BANNED_CHATS = b_chats
     await Media.ensure_indexes()
+    await delivery_db.ensure_indexes()
+    try:
+        await delivery_bot_manager.start()
+    except Exception as e:
+        logger.error("Failed to start Delivery Bot Manager: %s", e)
     if MULTIPLE_DB:
         await Media2.ensure_indexes()
         logger.info("Multiple Database Mode On. Now Files Will Be Save In Second DB If First DB Is Full")
@@ -79,9 +86,6 @@ async def dreamxbotz_start():
     temp.B_LINK = me.mention
     dreamxbotz.username = '@' + me.username
     asyncio.create_task(check_expired_premium(dreamxbotz))
-    # Initialize File Delivery Bot (Bot 2)
-    from dreamxbotz.delivery import bot2_manager
-    asyncio.create_task(bot2_manager.start_bot2())
     
     logger.info(f"{me.first_name} with Pyrogram v{__version__} (Layer {layer}) started on {me.username}.")
     logger.info(LOG_STR)
@@ -100,12 +104,11 @@ async def dreamxbotz_start():
     try:
         await idle()
     finally:
-        try:
-            from dreamxbotz.delivery import bot2_manager
-            await bot2_manager.stop_bot2()
-        except Exception as e:
-            logger.warning(f"Error stopping Bot 2: {e}")
         await app.cleanup()
+        try:
+            await delivery_bot_manager.stop()
+        except Exception:
+            pass
         await dreamxbotz.stop()
 
 if __name__ == '__main__':
