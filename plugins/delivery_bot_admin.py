@@ -137,6 +137,10 @@ async def handle_bot2_menu_nav(client: Client, query: CallbackQuery):
             f"• Total Deliveries: <code>{stats['total_delivered']}</code>\n"
             f"• Failed Deliveries: <code>{stats['failed_deliveries']}</code>\n"
             f"• Total Users: <code>{stats['total_users']}</code>\n"
+            "─────────────────────────\n"
+            "💡 <b>Direct Delivery Channel Relay:</b>\n"
+            f"• Make sure Bot 2 (@{status_info['bot_username']}) is an Administrator in your <code>LOG_CHANNEL</code> / <code>BIN_CHANNEL</code> so Bot 2 can copy files directly to users.\n"
+            "• If Bot 2 is not yet an admin in the channel, files automatically deliver via Main Bot so users never fail to receive them.\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━"
         )
         btn = [

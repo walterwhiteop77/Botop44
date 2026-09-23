@@ -32,6 +32,21 @@ DreamXlogs.txt
 docker-compose.yml
 Dockerfile
 
+# Web Dashboard Artifacts
+src/
+public/
+node_modules/
+dist/
+build/
+package.json
+package-lock.json
+bun.lock
+tsconfig*.json
+vite.config.ts
+index.html
+metadata.json
+*.zip
+
 # Misc
 .agents/
 README.md

@@ -1,7 +1,8 @@
+from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pyrogram import Client, enums
 from pyrogram.types import (
     Message,
@@ -13,8 +14,9 @@ from database.delivery_db import delivery_db
 from database.ia_filterdb import get_file_details
 from utils import clean_filename, get_size, get_time, temp
 from Script import script
-from info import ADMINS, DELETE_TIME, STREAM_MODE, PREMIUM_STREAM_MODE, UPDATE_CHNL_LNK
+from info import ADMINS, DELETE_TIME, STREAM_MODE, PREMIUM_STREAM_MODE, UPDATE_CHNL_LNK, BIN_CHANNEL, LOG_CHANNEL
 from database.users_chats_db import db
+from dreamxbotz.Bot import dreamxbotz
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +78,115 @@ async def schedule_batch_delete(media_msgs: List[Message], del_msg: Message, del
             pass
     except Exception as e:
         logger.error("Error in schedule_batch_delete: %s", e)
+
+async def deliver_media(
+    delivery_client: Client,
+    user_id: int,
+    file_id: str,
+    cover: Optional[str],
+    caption: str,
+    protect_content: bool,
+    reply_markup: Optional[InlineKeyboardMarkup],
+    req: Dict[str, Any]
+) -> Message:
+    """
+    Delivers media reliably across bot accounts:
+    1. If message is already stored in a channel (channel_id, message_id), copy it.
+    2. Relay via BIN_CHANNEL or LOG_CHANNEL:
+       - Bot 1 posts cached media to the storage channel (where Bot 1 has full permissions).
+       - Bot 2 copies that channel message to user_id.
+    3. Direct send_cached_media via Bot 2 (if Bot 2 already has access).
+    4. Main Bot Direct PM delivery fallback (Bot 1 delivers directly to user_id).
+    """
+    # 1. Existing message in channel
+    if req.get("channel_id") and req.get("message_id"):
+        try:
+            return await delivery_client.copy_message(
+                chat_id=user_id,
+                from_chat_id=req["channel_id"],
+                message_id=req["message_id"],
+                caption=caption,
+                protect_content=protect_content,
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logger.warning("Bot 2 copy from explicit channel failed: %s", e)
+
+    # 2. Relay via BIN_CHANNEL or LOG_CHANNEL
+    storage_channel = BIN_CHANNEL if (BIN_CHANNEL and BIN_CHANNEL != -100) else LOG_CHANNEL
+    if storage_channel and storage_channel != -100:
+        try:
+            relay_msg = await dreamxbotz.send_cached_media(
+                chat_id=storage_channel,
+                file_id=file_id,
+                caption=caption
+            )
+            if relay_msg:
+                try:
+                    sent = await delivery_client.copy_message(
+                        chat_id=user_id,
+                        from_chat_id=storage_channel,
+                        message_id=relay_msg.id,
+                        caption=caption,
+                        protect_content=protect_content,
+                        reply_markup=reply_markup
+                    )
+                    return sent
+                except Exception as b2_copy_err:
+                    logger.warning(
+                        "Bot 2 copy from storage channel %s failed: %s. "
+                        "Make sure Bot 2 is an Administrator in your LOG_CHANNEL/BIN_CHANNEL!",
+                        storage_channel, b2_copy_err
+                    )
+        except Exception as relay_post_err:
+            logger.warning("Main bot post to storage channel %s failed: %s", storage_channel, relay_post_err)
+
+    # 3. Direct send_cached_media from Bot 2
+    try:
+        return await delivery_client.send_cached_media(
+            chat_id=user_id,
+            file_id=file_id,
+            cover=cover,
+            caption=caption,
+            protect_content=protect_content,
+            reply_markup=reply_markup
+        )
+    except Exception as b2_send_err:
+        logger.warning("Bot 2 send_cached_media failed: %s. Falling back to Main Bot delivery.", b2_send_err)
+
+    # 4. Ultimate Fallback: Bot 1 sends directly to the user
+    try:
+        sent = await dreamxbotz.send_cached_media(
+            chat_id=user_id,
+            file_id=file_id,
+            cover=cover,
+            caption=caption,
+            protect_content=protect_content,
+            reply_markup=reply_markup
+        )
+        main_bot_user = (
+            getattr(dreamxbotz, "username", "")
+            or getattr(getattr(dreamxbotz, "me", None), "username", "")
+            or str(temp.U_NAME or "")
+        ).lstrip("@")
+        
+        link = f"https://t.me/{main_bot_user}" if main_bot_user else None
+        kb = [[InlineKeyboardButton("📂 Open Chat With Main Bot", url=link)]] if link else None
+        
+        await delivery_client.send_message(
+            chat_id=user_id,
+            text=(
+                "✅ <b>File Delivered to Your Chat with Main Bot!</b>\n\n"
+                f"Due to Telegram media security restrictions, your file was sent to your chat with @{main_bot_user}.\n"
+                "Please check your messages there!"
+            ),
+            reply_markup=InlineKeyboardMarkup(kb) if kb else None,
+            parse_mode=enums.ParseMode.HTML
+        )
+        return sent
+    except Exception as b1_err:
+        logger.error("All delivery methods failed for user %s: %s", user_id, b1_err)
+        raise b1_err
 
 async def handle_normal_start(client: Client, message: Message):
     """Normal /start on Bot 2 without a valid delivery token."""
@@ -272,13 +383,15 @@ async def handle_file_delivery(client: Client, message: Message, token: str):
                     f_caption = f"<code>{title}</code>"
                 
                 btn = await bot2_stream_buttons(user_id, f_id)
-                sent_msg = await client.send_cached_media(
-                    chat_id=user_id,
+                sent_msg = await deliver_media(
+                    delivery_client=client,
+                    user_id=user_id,
                     file_id=f_id,
                     cover=cover,
                     caption=f_caption,
                     protect_content=req.get("protect_content", False),
-                    reply_markup=InlineKeyboardMarkup(btn) if btn else None
+                    reply_markup=InlineKeyboardMarkup(btn) if btn else None,
+                    req=req
                 )
                 delivered_msgs.append(sent_msg)
 
@@ -309,29 +422,16 @@ async def handle_file_delivery(client: Client, message: Message, token: str):
 
             btn = await bot2_stream_buttons(user_id, file_id)
             
-            try:
-                sent_msg = await client.send_cached_media(
-                    chat_id=user_id,
-                    file_id=file_id,
-                    cover=cover,
-                    caption=f_caption,
-                    protect_content=req.get("protect_content", False),
-                    reply_markup=InlineKeyboardMarkup(btn) if btn else None
-                )
-            except Exception as send_err:
-                logger.warning("send_cached_media failed on bot2, checking fallback: %s", send_err)
-                # Fallback to copy_message if channel_id & message_id are present
-                if req.get("channel_id") and req.get("message_id"):
-                    sent_msg = await client.copy_message(
-                        chat_id=user_id,
-                        from_chat_id=req["channel_id"],
-                        message_id=req["message_id"],
-                        caption=f_caption,
-                        protect_content=req.get("protect_content", False),
-                        reply_markup=InlineKeyboardMarkup(btn) if btn else None
-                    )
-                else:
-                    raise send_err
+            sent_msg = await deliver_media(
+                delivery_client=client,
+                user_id=user_id,
+                file_id=file_id,
+                cover=cover,
+                caption=f_caption,
+                protect_content=req.get("protect_content", False),
+                reply_markup=InlineKeyboardMarkup(btn) if btn else None,
+                req=req
+            )
 
             del_notice = await sent_msg.reply(
                 script.DEL_MSG.format(get_time(auto_delete_time)),
