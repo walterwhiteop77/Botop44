@@ -1,8 +1,9 @@
+from __future__ import annotations
 import asyncio
 import time
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Tuple, List, Dict, Any, Union
 from pyrogram import Client, filters, enums
 from pyrogram.types import (
     InlineKeyboardMarkup,
