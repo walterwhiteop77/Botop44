@@ -7,6 +7,7 @@ import asyncio
 import string
 import sys
 import pytz
+from typing import Optional, List, Dict, Any, Union, Tuple
 from .pmfilter import auto_filter 
 from Script import script
 from datetime import datetime, timedelta
@@ -14,7 +15,7 @@ from database.refer import referdb
 from database.config_db import mdb
 from pyrogram.types import LinkPreviewOptions, InlineKeyboardButton, InlineKeyboardMarkup, Message, ReplyKeyboardMarkup, CopyTextButton
 from pyrogram import Client, filters, enums, StopPropagation
-from pyrogram.errors import FloodWait, UserNotParticipant , ChannelInvalid, PeerIdInvalid
+from pyrogram.errors import FloodWait, UserNotParticipant, ChannelInvalid, PeerIdInvalid, UserIsBlocked, InputUserDeactivated
 from database.ia_filterdb import Media, Media2, get_file_details, unpack_new_file_id, get_bad_files, save_file
 from database.users_chats_db import db
 from info import (
@@ -26,7 +27,6 @@ from info import (
     
 )
 from utils import get_settings, save_group_settings, is_subscribed, is_req_subscribed, get_size, get_shortlink, is_check_admin, temp, get_readable_time, get_time, generate_settings_text, log_error, clean_filename, get_random_mix_id
-from dreamxbotz.delivery_bot import delivery_bot_manager, create_file_delivery_link
 
 logger = logging.getLogger(__name__)
 
@@ -70,33 +70,13 @@ async def start(client, message):
                 msg = script.THIRDT_VERIFY_COMPLETE_TEXT
             else:
                 msg = script.SECOND_VERIFY_COMPLETE_TEXT if key == "second_time_verified" else script.VERIFY_COMPLETE_TEXT
-            btn_caption = "✅ ᴄʟɪᴄᴋ ʜᴇʀᴇ ᴛᴏ ɢᴇᴛ ꜰɪʟᴇ ✅"
-            if delivery_bot_manager.is_active():
-                try:
-                    f_type = "allfiles" if message.command[1].startswith('sendall') else "single"
-                    _, direct_link = await create_file_delivery_link(
-                        user_id=user_id,
-                        file_id=file_id,
-                        file_type=f_type,
-                        grp_id=int(grp_id),
-                        protect_content=settings.get('file_secure', PROTECT_CONTENT)
-                    )
-                    verifiedfiles = direct_link
-                    btn_caption = "📥 ɢᴇᴛ ꜰɪʟᴇ"
-                except Exception as e:
-                    logger.error("Error creating direct Bot 2 link on verification: %s", e)
-                    if message.command[1].startswith('sendall'):
-                        verifiedfiles = f"https://telegram.me/{temp.U_NAME}?start=allfiles_{grp_id}_{file_id}"
-                    else:
-                        verifiedfiles = f"https://telegram.me/{temp.U_NAME}?start=file_{grp_id}_{file_id}"
+            if message.command[1].startswith('sendall'):
+                verifiedfiles = f"https://telegram.me/{temp.U_NAME}?start=allfiles_{grp_id}_{file_id}"
             else:
-                if message.command[1].startswith('sendall'):
-                    verifiedfiles = f"https://telegram.me/{temp.U_NAME}?start=allfiles_{grp_id}_{file_id}"
-                else:
-                    verifiedfiles = f"https://telegram.me/{temp.U_NAME}?start=file_{grp_id}_{file_id}"
+                verifiedfiles = f"https://telegram.me/{temp.U_NAME}?start=file_{grp_id}_{file_id}"
             await client.send_message(settings['log'], script.VERIFIED_LOG_TEXT.format(m.from_user.mention, user_id, datetime.now(pytz.timezone('Asia/Kolkata')).strftime('%d %B %Y'), num))
             btn = [[
-                InlineKeyboardButton(btn_caption, url=verifiedfiles),
+                InlineKeyboardButton("✅ ᴄʟɪᴄᴋ ʜᴇʀᴇ ᴛᴏ ɢᴇᴛ ꜰɪʟᴇ ✅", url=verifiedfiles),
             ]]
             reply_markup = InlineKeyboardMarkup(btn)
             dlt=await m.reply_photo(
@@ -328,50 +308,27 @@ async def start(client, message):
                     verify_id = ''.join(random.choices(string.ascii_uppercase + string.digits, k=7))
                     await db.create_verify_id(user_id, verify_id)
                     temp.VERIFICATIONS[user_id] = grp_id
-                    bot_username = temp.U_NAME
-                    if not bot_username:
-                        bot_username = getattr(getattr(message, "_client", None), "me", None)
-                        bot_username = getattr(bot_username, "username", None) or "AutoFilterBot"
-
                     if message.command[1].startswith('allfiles'):
-                        raw_verify = f"https://telegram.me/{bot_username}?start=sendall_{user_id}_{verify_id}_{file_id}"
+                        verify = await get_shortlink(f"https://telegram.me/{temp.U_NAME}?start=sendall_{user_id}_{verify_id}_{file_id}", grp_id, is_second_shortener, is_third_shortener)
                     else:
-                        raw_verify = f"https://telegram.me/{bot_username}?start=notcopy_{user_id}_{verify_id}_{file_id}"
-
-                    verify = await get_shortlink(raw_verify, grp_id, is_second_shortener, is_third_shortener)
-                    if not verify or not isinstance(verify, str) or not (verify.startswith("http://") or verify.startswith("https://")):
-                        verify = raw_verify
-
+                        verify = await get_shortlink(f"https://telegram.me/{temp.U_NAME}?start=notcopy_{user_id}_{verify_id}_{file_id}", grp_id, is_second_shortener, is_third_shortener)
                     if is_third_shortener:
-                        howtodownload = settings.get('tutorial_3') or TUTORIAL_3
+                        howtodownload = settings.get('tutorial_3', TUTORIAL_3)
                     else:
-                        howtodownload = (settings.get('tutorial_2') or TUTORIAL_2) if is_second_shortener else (settings.get('tutorial') or TUTORIAL)
-
-                    # Sanitize tutorial link
-                    if not howtodownload or not isinstance(howtodownload, str):
-                        howtodownload = TUTORIAL or "https://t.me/dreamxbotz"
-                    howtodownload = howtodownload.strip()
-                    if howtodownload.startswith("@"):
-                        howtodownload = f"https://t.me/{howtodownload[1:]}"
-                    elif not (howtodownload.startswith("http://") or howtodownload.startswith("https://")):
-                        howtodownload = f"https://t.me/{howtodownload}"
-
+                        howtodownload = settings.get('tutorial_2', TUTORIAL_2) if is_second_shortener else settings.get('tutorial', TUTORIAL)
                     buttons = [[
                         InlineKeyboardButton(text="♻️ ᴄʟɪᴄᴋ ʜᴇʀᴇ ᴛᴏ ᴠᴇʀɪꜰʏ ♻️", url=verify)
+                    ],[
+                        InlineKeyboardButton(text="⁉️ ʜᴏᴡ ᴛᴏ ᴠᴇʀɪꜰʏ ⁉️", url=howtodownload)
                     ]]
-                    if howtodownload and (howtodownload.startswith("http://") or howtodownload.startswith("https://")):
-                        buttons.append([
-                            InlineKeyboardButton(text="⁉️ ʜᴏᴡ ᴛᴏ ᴠᴇʀɪꜰʏ ⁉️", url=howtodownload)
-                        ])
-
-                    reply_markup = InlineKeyboardMarkup(buttons)
+                    reply_markup=InlineKeyboardMarkup(buttons)
                     if await db.user_verified(user_id): 
                         msg = script.THIRDT_VERIFICATION_TEXT
                     else:            
                         msg = script.SECOND_VERIFICATION_TEXT if is_second_shortener else script.VERIFICATION_TEXT
-                    n = await m.reply_text(
+                    n=await m.reply_text(
                         text=msg.format(message.from_user.mention),
-                        protect_content=True,
+                        protect_content = True,
                         reply_markup=reply_markup,
                         parse_mode=enums.ParseMode.HTML
                     )
@@ -384,118 +341,56 @@ async def start(client, message):
                 pass
 
         files_ = await file_details_task
-        if delivery_bot_manager.is_active():
-            if data.startswith("allfiles"):
-                try:
-                    files = temp.GETALL.get(file_id)
-                    if not files:
-                        return await message.reply('<b><i>ɴᴏ ꜱᴜᴄʜ ꜰɪʟᴇ ᴇxɪꜱᴛꜱ !</b></i>')
-                    settings = await get_settings(int(grp_id))
-                    _, deep_link = await create_file_delivery_link(
-                        user_id=message.from_user.id,
-                        file_id=file_id,
-                        file_type="allfiles",
-                        grp_id=int(grp_id),
-                        file_name=f"Batch ({len(files)} files)",
-                        protect_content=settings.get('file_secure', PROTECT_CONTENT)
-                    )
-                    btn = [[InlineKeyboardButton("📥 ɢᴇᴛ ꜰɪʟᴇꜱ", url=deep_link)]]
-                    return await message.reply_text(
-                        f"📁 <b>Batch Files Ready For Delivery!</b>\n\n"
-                        f"📦 <b>Total Files:</b> <code>{len(files)}</code>\n\n"
-                        f"<i>Click the button below to receive your files directly from our delivery bot:</i>",
-                        reply_markup=InlineKeyboardMarkup(btn),
-                        parse_mode=enums.ParseMode.HTML
-                    )
-                except Exception as e:
-                    logger.exception(e)
-            else:
-                try:
-                    if files_:
-                        files = files_[0]
-                        title = clean_filename(files.file_name)
-                        size = get_size(files.file_size)
-                        cover = files.cover if hasattr(files, "cover") else None
-                        f_caption = files.caption
-                        settings = await get_settings(int(grp_id))
-                        DREAMX_CAPTION = settings.get('caption', CUSTOM_FILE_CAPTION)
-                        if DREAMX_CAPTION:
-                            try:
-                                f_caption = DREAMX_CAPTION.format(file_name='' if title is None else title, file_size='' if size is None else size, file_caption='' if f_caption is None else f_caption)
-                            except Exception:
-                                pass
-                        if not f_caption:
-                            f_caption = f"<code>{title}</code>"
-                        _, deep_link = await create_file_delivery_link(
-                            user_id=message.from_user.id,
-                            file_id=file_id,
-                            file_type="single",
-                            grp_id=int(grp_id),
-                            file_name=title,
-                            file_size=files.file_size,
-                            caption=f_caption,
-                            cover=cover,
-                            protect_content=settings.get('file_secure', PROTECT_CONTENT)
-                        )
-                        btn = [[InlineKeyboardButton("📥 ɢᴇᴛ ꜰɪʟᴇ", url=deep_link)]]
-                        return await message.reply_text(
-                            f"📁 <b>File Ready For Delivery!</b>\n\n"
-                            f"🎬 <b>File:</b> <code>{title}</code>\n"
-                            f"💾 <b>Size:</b> <code>{size}</code>\n\n"
-                            f"<i>Click the button below to receive your file directly from our delivery bot:</i>",
-                            reply_markup=InlineKeyboardMarkup(btn),
-                            parse_mode=enums.ParseMode.HTML
-                        )
-                except Exception as e:
-                    logger.exception(e)
+        settings = await get_settings(int(grp_id))
+        protect_content = settings.get('file_secure', PROTECT_CONTENT)
 
         if data.startswith("allfiles"):
             try:
                 files = temp.GETALL.get(file_id)
                 if not files:
                     return await message.reply('<b><i>ɴᴏ ꜱᴜᴄʜ ꜰɪʟᴇ ᴇxɪꜱᴛꜱ !</b></i>')
-                filesarr = []
-                cover = None
+                batch_files = []
                 for file in files:
-                    file_id = file.file_id
-                    files_ = await get_file_details(file_id)
-                    files1 = files_[0]
+                    f_id = file.file_id
+                    f_details = await get_file_details(f_id)
+                    if not f_details:
+                        continue
+                    files1 = f_details[0]
                     title = clean_filename(files1.file_name)
                     cover = files1.cover
                     size = get_size(files1.file_size)
                     f_caption = files1.caption
-                    settings = await get_settings(int(grp_id))
                     DREAMX_CAPTION = settings.get('caption', CUSTOM_FILE_CAPTION)
                     if DREAMX_CAPTION:
                         try:
-                            f_caption=DREAMX_CAPTION.format(file_name= '' if title is None else title, file_size='' if size is None else size, file_caption='' if f_caption is None else f_caption)
+                            f_caption = DREAMX_CAPTION.format(file_name='' if title is None else title, file_size='' if size is None else size, file_caption='' if f_caption is None else f_caption)
                         except Exception as e:
                             logger.exception(e)
-                            f_caption = f_caption
                     if f_caption is None:
                         f_caption = f"{clean_filename(files1.file_name)}"
-                    btn = await stream_buttons(message.from_user.id, file_id)
-                    msg = await client.send_cached_media(
-                        chat_id=message.from_user.id,
-                        file_id=file_id,
-                        cover=cover,
-                        caption=f_caption,
-                        protect_content=settings.get('file_secure', PROTECT_CONTENT),
-                        reply_markup=InlineKeyboardMarkup(btn)
-                    )
-                    filesarr.append(msg)
-                k = await client.send_message(chat_id=message.from_user.id, text=script.DEL_MSG.format(get_time(DELETE_TIME)), parse_mode=enums.ParseMode.HTML)
+                    batch_files.append({
+                        "file_id": f_id,
+                        "caption": f_caption,
+                        "cover": cover
+                    })
 
-                await asyncio.sleep(DELETE_TIME)
-                for x in filesarr:
-                    await x.delete()
-                await k.edit_text("<b>ʏᴏᴜʀ ᴀʟʟ ᴠɪᴅᴇᴏꜱ/ꜰɪʟᴇꜱ ᴀʀᴇ ᴅᴇʟᴇᴛᴇᴅ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ !\nᴋɪɴᴅʟʏ ꜱᴇᴀʀᴄʜ ᴀɢᴀɪɴ</b>")
-                return
+                btn = []
+                return await send_file_via_dual_bot(
+                    client=client,
+                    message=message,
+                    user_id=message.from_user.id,
+                    file_id=file_id,
+                    caption="",
+                    cover=None,
+                    protect_content=protect_content,
+                    delete_time=DELETE_TIME,
+                    btn=btn,
+                    batch_files=batch_files
+                )
             except Exception as e:
                 logger.exception(e)
                 return
 
-        settings = await get_settings(int(grp_id))
         if not files_:
             file_id = decoded_file_id
             try:
@@ -504,31 +399,17 @@ async def start(client, message):
                     details = await get_file_details(file_id)
                     cover = details[0].cover if details and details[0].cover else None
                 btn = await stream_buttons(message.from_user.id, file_id)
-                msg = await client.send_cached_media(
-                    chat_id=message.from_user.id,
-                    cover=cover,
+                return await send_file_via_dual_bot(
+                    client=client,
+                    message=message,
+                    user_id=message.from_user.id,
                     file_id=file_id,
-                    protect_content=settings.get('file_secure', PROTECT_CONTENT),
-                    reply_markup=InlineKeyboardMarkup(btn))
-
-                filetype = msg.media
-                file = getattr(msg, filetype.value)
-                title = clean_filename(file.file_name)
-                size=get_size(file.file_size)
-                f_caption = f"<code>{title}</code>"
-                settings = await get_settings(int(grp_id))
-                DREAMX_CAPTION = settings.get('caption', CUSTOM_FILE_CAPTION)
-                if DREAMX_CAPTION:
-                    try:
-                        f_caption=DREAMX_CAPTION.format(file_name= '' if title is None else title, file_size='' if size is None else size, file_caption='')
-                    except Exception:
-                        return
-                await msg.edit_caption(f_caption, reply_markup=InlineKeyboardMarkup(btn))
-                k = await msg.reply(script.DEL_MSG.format(get_time(DELETE_TIME)), parse_mode=enums.ParseMode.HTML)
-                await asyncio.sleep(DELETE_TIME)
-                await msg.delete()
-                await k.edit_text("<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!</b>")
-                return
+                    caption="",
+                    cover=cover,
+                    protect_content=protect_content,
+                    delete_time=DELETE_TIME,
+                    btn=btn
+                )
             except Exception as e:
                 logger.exception(e)
                 pass
@@ -539,7 +420,6 @@ async def start(client, message):
         size = get_size(files.file_size)
         cover = files.cover if files.cover else None
         f_caption = files.caption
-        settings = await get_settings(int(grp_id))            
         DREAMX_CAPTION = settings.get('caption', CUSTOM_FILE_CAPTION)
         if DREAMX_CAPTION:
             try:
@@ -550,25 +430,133 @@ async def start(client, message):
         if f_caption is None:
             f_caption = clean_filename(files.file_name)
         btn = await stream_buttons(message.from_user.id, file_id)
-        msg = await client.send_cached_media(
-            chat_id=message.from_user.id,
+        return await send_file_via_dual_bot(
+            client=client,
+            message=message,
+            user_id=message.from_user.id,
             file_id=file_id,
-            cover=cover,
             caption=f_caption,
-            protect_content=settings.get('file_secure', PROTECT_CONTENT),
-            reply_markup=InlineKeyboardMarkup(btn)
+            cover=cover,
+            protect_content=protect_content,
+            delete_time=DELETE_TIME,
+            btn=btn
         )
-        
-        k = await msg.reply(script.DEL_MSG.format(get_time(DELETE_TIME)), parse_mode=enums.ParseMode.HTML)
-        await asyncio.sleep(DELETE_TIME)
-        await msg.delete()
-        await k.edit_text("<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!</b>")
-        return
     except StopPropagation:
         raise
     except Exception as e:
         logger.exception(f"Error In /start command - {e}")
         pass
+
+async def _delete_temp_notice(msg: Message, delay: int):
+    try:
+        await asyncio.sleep(delay)
+        await msg.delete()
+    except Exception:
+        pass
+
+async def send_file_via_dual_bot(
+    client: Client,
+    message: Message,
+    user_id: int,
+    file_id: str,
+    caption: str,
+    cover: Optional[str],
+    protect_content: bool,
+    delete_time: int,
+    btn: list,
+    batch_files: Optional[list] = None
+):
+    """
+    Dual-Bot File Delivery Dispatcher.
+    Checks Bot 2 status. If active, dispatches delivery via Bot 2:
+      - Case A: If user has started Bot 2, direct PM delivery.
+      - Case B: If user hasn't started Bot 2, sends secure deep link button.
+    If Bot 2 is inactive/disabled, respects fallback setting or alerts user.
+    """
+    from dreamxbotz.delivery import bot2_manager
+    b2_status = await bot2_manager.get_bot2_status()
+
+    if b2_status["enabled"] and bot2_manager.is_running:
+        req_id, token, deep_link = await bot2_manager.create_delivery(
+            user_id=user_id,
+            file_id=file_id,
+            caption=caption,
+            cover=cover,
+            protect_content=protect_content,
+            delete_time=delete_time,
+            batch_files=batch_files
+        )
+
+        # Case A: User has already interacted with Bot 2
+        if await bot2_manager.user_has_started(user_id):
+            success, reason = await bot2_manager.direct_deliver(req_id, user_id)
+            if success:
+                notify_msg = await message.reply_text(
+                    f"✅ <b>ʏᴏᴜʀ ꜰɪʟᴇ ʜᴀꜱ ʙᴇᴇɴ ꜱᴇɴᴛ ʙʏ ᴏᴜʀ ꜰɪʟᴇ ᴅᴇʟɪᴠᴇʀʏ ʙᴏᴛ !</b>\n\n"
+                    f"📥 <i>ᴘʟᴇᴀꜱᴇ ᴄʜᴇᴄᴋ ʏᴏᴜʀ ᴘʀɪᴠᴀᴛᴇ ᴄʜᴀᴛ ᴡɪᴛʜ</i> @{b2_status['username']}.",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("📥 ᴠɪᴇᴡ ꜰɪʟᴇ ɪɴ ᴅᴇʟɪᴠᴇʀʏ ʙᴏᴛ", url=f"https://t.me/{b2_status['username']}")]
+                    ]),
+                    parse_mode=enums.ParseMode.HTML
+                )
+                asyncio.create_task(_delete_temp_notice(notify_msg, 60))
+                return
+            elif reason != "CANNOT_INITIATE_PM":
+                logger.warning(f"Direct deliver non-fatal: {reason}")
+
+        # Case B: User has not started Bot 2 yet or direct PM blocked
+        delivery_btn = [
+            [InlineKeyboardButton("📥 ꜱᴛᴀʀᴛ ꜰɪʟᴇ ᴅᴇʟɪᴠᴇʀʏ", url=deep_link)]
+        ]
+        prompt_msg = await message.reply_text(
+            f"📥 <b>ʏᴏᴜʀ ꜰɪʟᴇ ɪꜱ ʀᴇᴀᴅʏ ꜰᴏʀ ᴅᴇʟɪᴠᴇʀʏ !</b>\n\n"
+            f"<i>ᴄʟɪᴄᴋ ᴛʜᴇ ꜱᴇᴄᴜʀᴇ ʙᴜᴛᴛᴏɴ ʙᴇʟᴏᴡ ᴛᴏ ʀᴇᴄᴇɪᴠᴇ ʏᴏᴜʀ ꜰɪʟᴇ ɪɴ ᴏᴜʀ ꜰɪʟᴇ ᴅᴇʟɪᴠᴇʀʏ ʙᴏᴛ.</i>\n\n"
+            f"⏱️ <i>Link expires in 30 minutes.</i>",
+            reply_markup=InlineKeyboardMarkup(delivery_btn),
+            parse_mode=enums.ParseMode.HTML
+        )
+        asyncio.create_task(_delete_temp_notice(prompt_msg, 300))
+        return
+
+    # If Bot 2 is not enabled/running, check fallback
+    if b2_status.get("fallback_to_bot1", True):
+        if batch_files:
+            filesarr = []
+            for item in batch_files:
+                f_id = item["file_id"]
+                s_btn = await stream_buttons(user_id, f_id)
+                msg = await client.send_cached_media(
+                    chat_id=user_id,
+                    file_id=f_id,
+                    cover=item.get("cover"),
+                    caption=item.get("caption"),
+                    protect_content=protect_content,
+                    reply_markup=InlineKeyboardMarkup(s_btn)
+                )
+                filesarr.append(msg)
+            k = await client.send_message(chat_id=user_id, text=script.DEL_MSG.format(get_time(delete_time)), parse_mode=enums.ParseMode.HTML)
+            await asyncio.sleep(delete_time)
+            for x in filesarr:
+                await x.delete()
+            await k.edit_text("<b>ʏᴏᴜʀ ᴀʟʟ ᴠɪᴅᴇᴏꜱ/ꜰɪʟᴇꜱ ᴀʀᴇ ᴅᴇʟᴇᴛᴇᴅ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ !\nᴋɪɴᴅʟʏ ꜱᴇᴀʀᴄʜ ᴀɢᴀɪɴ</b>")
+        else:
+            msg = await client.send_cached_media(
+                chat_id=user_id,
+                file_id=file_id,
+                cover=cover,
+                caption=caption,
+                protect_content=protect_content,
+                reply_markup=InlineKeyboardMarkup(btn)
+            )
+            k = await msg.reply(script.DEL_MSG.format(get_time(delete_time)), parse_mode=enums.ParseMode.HTML)
+            await asyncio.sleep(delete_time)
+            await msg.delete()
+            await k.edit_text("<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!</b>")
+    else:
+        await message.reply_text(
+            "⚠️ <b>File delivery is temporarily unavailable.</b>\n<i>Please try again in a few minutes.</i>",
+            parse_mode=enums.ParseMode.HTML
+        )
 
 async def stream_buttons(user_id: int, file_id: str):
     if STREAM_MODE and not PREMIUM_STREAM_MODE:
@@ -884,7 +872,10 @@ async def send_msg(bot, message):
         parts = message.text.split(" ", 1)
         if len(parts) < 2:
             return await message.reply_text("<b>ᴜꜱᴇ ᴛʜɪꜱ ᴄᴏᴍᴍᴀɴᴅ ᴀꜱ ᴀ ʀᴇᴘʟʏ ᴛᴏ ᴀɴʏ ᴍᴇꜱꜱᴀɢᴇ ᴜꜱɪɴɢ ᴛʜᴇ ᴛᴀʀɢᴇᴛ ᴄʜᴀᴛ ɪᴅ. ꜰᴏʀ ᴇɢ:  /send ᴜꜱᴇʀɪᴅ</b>")
-        target_id = parts[1]
+        try:
+            target_id = int(parts[1])
+        except ValueError:
+            target_id = parts[1]
         try:
             user = await bot.get_users(target_id)
             if await db.is_user_exist(user.id):
@@ -892,6 +883,12 @@ async def send_msg(bot, message):
                 await message.reply_text(f"<b>ʏᴏᴜʀ ᴍᴇꜱꜱᴀɢᴇ ʜᴀꜱ ʙᴇᴇɴ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ꜱᴇɴᴛ ᴛᴏ {user.mention}.</b>")
             else:
                 await message.reply_text("<b>ᴛʜɪꜱ ᴜꜱᴇʀ ʜᴀꜱɴ'ᴛ ꜱᴛᴀʀᴛᴇᴅ ᴛʜɪꜱ ʙᴏᴛ ʏᴇᴛ !</b>")
+        except UserIsBlocked:
+            await message.reply_text("<b>ᴛʜɪꜱ ᴜꜱᴇʀ ʜᴀꜱ ʙʟᴏᴄᴋᴇᴅ ᴛʜᴇ ʙᴏᴛ !</b>")
+        except PeerIdInvalid:
+            await message.reply_text("<b>ɪɴᴠᴀʟɪᴅ ᴜꜱᴇʀ ɪᴅ, ᴏʀ ᴛʜᴇ ʙᴏᴛ ʜᴀꜱɴ'ᴛ ᴍᴇᴛ ᴛʜɪꜱ ᴜꜱᴇʀ ʏᴇᴛ !</b>")
+        except InputUserDeactivated:
+            await message.reply_text("<b>ᴛʜɪꜱ ᴜꜱᴇʀ ᴀᴄᴄᴏᴜɴᴛ ɪꜱ ᴅᴇʟᴇᴛᴇᴅ / ᴅᴇᴀᴄᴛɪᴠᴀᴛᴇᴅ !</b>")
         except Exception as e:
             await message.reply_text(f"<b>Error: {e}</b>")
     else:
