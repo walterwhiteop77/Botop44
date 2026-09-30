@@ -20,6 +20,9 @@ from Script import script
 from pyrogram.errors.exceptions.bad_request_400 import MediaEmpty, PhotoInvalidDimensions, WebpageMediaEmpty
 from database.refer import referdb
 from database.users_chats_db import db
+from database.file_bot_db import file_bot_db
+from dreamxbotz.Bot.file_bot import file_bot_manager
+from info import IS_VERIFY, TWO_VERIFY_GAP, THREE_VERIFY_GAP
 import asyncio
 import re
 import math
@@ -828,6 +831,30 @@ async def filter_seasons_cb_handler(client: Client, query: CallbackQuery):
     await query.answer()
 
 
+async def is_user_approved(client, user_id: int, chat_id: int = 0) -> bool:
+    try:
+        if await db.has_premium_access(user_id):
+            return True
+        settings = await get_settings(int(chat_id)) if chat_id else {}
+        fsub_channels = list(dict.fromkeys((settings.get('fsub', []) if settings else []) + AUTH_CHANNELS))
+        if fsub_channels:
+            btn = await is_subscribed(client, user_id, fsub_channels)
+            if btn:
+                return False
+        if AUTH_REQ_CHANNELS:
+            btn = await is_req_subscribed(client, user_id, AUTH_REQ_CHANNELS)
+            if btn:
+                return False
+        user_verified = await db.is_user_verified(user_id)
+        is_second = await db.use_second_shortener(user_id, settings.get('verify_time', TWO_VERIFY_GAP))
+        is_third = await db.use_third_shortener(user_id, settings.get('third_verify_time', THREE_VERIFY_GAP))
+        if settings.get("is_verify", IS_VERIFY) and (not user_verified or is_second or is_third):
+            return False
+        return True
+    except Exception as e:
+        logger.error("Error checking user approval: %s", e)
+        return False
+
 @Client.on_callback_query(group=10)
 async def cb_handler(client: Client, query: CallbackQuery):
     DreamxData = query.data
@@ -859,11 +886,21 @@ async def cb_handler(client: Client, query: CallbackQuery):
         user = query.message.reply_to_message.from_user.id if query.message.reply_to_message else query.from_user.id
         if int(user) != 0 and query.from_user.id != int(user):
             return await query.answer(script.ALRT_TXT.format(query.from_user.first_name), show_alert=True)
+        if file_bot_manager.is_active():
+            if await is_user_approved(client, query.from_user.id, query.message.chat.id):
+                token = await file_bot_db.create_token(user_id=query.from_user.id, file_id=file_id, grp_id=query.message.chat.id)
+                return await query.answer(url=f"https://t.me/{file_bot_manager.get_username()}?start={token}")
         await query.answer(url=f"https://t.me/{temp.U_NAME}?start=file_{query.message.chat.id}_{file_id}")
 
     elif query.data.startswith("sendfiles"):
         ident, key = query.data.split("#")
         settings = await get_settings(query.message.chat.id)
+        if file_bot_manager.is_active():
+            if await is_user_approved(client, query.from_user.id, query.message.chat.id):
+                files = temp.GETALL.get(key)
+                fids = [f.file_id for f in files] if files else []
+                token = await file_bot_db.create_token(user_id=query.from_user.id, file_ids=fids, grp_id=query.message.chat.id, is_all_files=True)
+                return await query.answer(url=f"https://t.me/{file_bot_manager.get_username()}?start={token}")
         try:
             await query.answer(url=f"https://telegram.me/{temp.U_NAME}?start=allfiles_{query.message.chat.id}_{key}")
             return
@@ -906,6 +943,22 @@ async def cb_handler(client: Client, query: CallbackQuery):
                     show_alert=True
                 )
                 return
+            if file_bot_manager.is_active():
+                chat_id_int = int(chat) if chat.lstrip("-").isdigit() else 0
+                if await is_user_approved(client, query.from_user.id, chat_id_int):
+                    actual_fid = file_id.split("_", 1)[1] if "_" in file_id else file_id
+                    is_all = kk == "allfiles"
+                    fids = None
+                    if is_all and temp.GETALL.get(actual_fid):
+                        fids = [f.file_id for f in temp.GETALL[actual_fid]]
+                    token = await file_bot_db.create_token(
+                        user_id=query.from_user.id,
+                        file_id=actual_fid if not is_all else None,
+                        file_ids=fids,
+                        grp_id=chat_id_int,
+                        is_all_files=is_all
+                    )
+                    return await query.answer(url=f"https://t.me/{file_bot_manager.get_username()}?start={token}")
             await query.answer(url=f"https://t.me/{temp.U_NAME}?start={kk}_{file_id}")
             if query.message.chat.type == enums.ChatType.PRIVATE:
                 try:

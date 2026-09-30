@@ -3,36 +3,27 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# Sessions & Logs
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Telethon/Pyrogram Sessions
 *.session
 *.session-journal
+
+# Logs
 *.log
 DreamXlogs.txt
 
-# Environment & Keys
-.env
-.env*
-!.env.example
-.bot2_key
-
-# Web Dashboard Artifacts (AI Studio preview environment)
-src/
-public/
-dist/
-build/
-coverage/
-node_modules/
-package.json
-package-lock.json
-bun.lock
-tsconfig*.json
-vite.config.ts
-index.html
-metadata.json
-*.zip
-
-# Operating System & IDE
+# OS Generated Files
 .DS_Store
-.vscode/
+Thumbs.db
+
+# IDE / Editor Files
 .idea/
+.vscode/
+.agents/
 *.swp

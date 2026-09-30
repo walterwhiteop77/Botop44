@@ -189,6 +189,9 @@ class ByteStreamer:
                     break
         except (TimeoutError, AttributeError):
             pass
+        except Exception as e:
+            logger.error(f"DEBUG custom_dl.py: Exception in stream_media: {e}", exc_info=True)
+            pass
         finally:
             logger.debug(f"Finished yielding file with {current_part} parts.")
             work_loads[index] -= 1
