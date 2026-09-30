@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import time
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 from pyrogram import Client, filters, enums
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from pyrogram.errors import MediaEmpty, FloodWait, UserIsBlocked, InputUserDeactivated, MessageNotModified
